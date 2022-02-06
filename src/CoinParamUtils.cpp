@@ -2,273 +2,135 @@
 // Corporation and others.  All Rights Reserved.
 // This code is licensed under the terms of the Eclipse Public License (EPL).
 
+#include "CoinUtilsConfig.h"
+
 #include <cassert>
 #include <cerrno>
 #include <iostream>
-
-#include "CoinUtilsConfig.h"
-#include "CoinParam.hpp"
+#include <sstream>
 #include <cstdlib>
 #include <cstring>
 #include <cstdio>
-
 #ifdef COINUTILS_HAS_READLINE
 #include <readline/readline.h>
 #include <readline/history.h>
 #endif
 
-/* Unnamed local namespace */
-namespace {
-
-/*
-  cmdField: The index of the current command line field. Forced to -1 when
-	    accepting commands from stdin (interactive) or a command file.
-  readSrc:  Current input source.
-
-  pendingVal: When the form param=value is encountered, both keyword and value
-	    form one command line field. We need to return `param' as the
-	    field and somehow keep the value around for the upcoming call
-	    that'll request it. That's the purpose of pendingVal.
-*/
-
-int cmdField = 1;
-FILE *readSrc = stdin;
-std::string pendingVal = "";
-
-/*
-  Get next command or field in command. When in interactive mode, prompt the
-  user and read the resulting line of input.
-*/
-std::string nextField(const char *prompt)
-{
-  static char line[1000];
-  static char *where = NULL;
-  std::string field;
-  const char *dflt_prompt = "Eh? ";
-
-  if (prompt == 0) {
-    prompt = dflt_prompt;
-  }
-  /*
-  Do we have a line at the moment? If not, acquire one. When we're done,
-  line holds the input line and where points to the start of the line. If we're
-  using the readline library, add non-empty lines to the history list.
-*/
-  if (!where) {
-#ifdef COINUTILS_HAS_READLINE
-    if (readSrc == stdin) {
-      where = readline(prompt);
-      if (where) {
-        if (*where)
-          add_history(where);
-        strcpy(line, where);
-        free(where);
-        where = line;
-      }
-    } else {
-      where = fgets(line, 1000, readSrc);
-    }
-#else
-    if (readSrc == stdin) {
-      fprintf(stdout, "%s", prompt);
-      fflush(stdout);
-    }
-    where = fgets(line, 1000, readSrc);
-#endif
-    /*
-  If where is NULL, we have EOF. Return a null string.
-*/
-    if (!where)
-      return field;
-    /*
-  Clean the image. Trailing junk first. The line will be cut off at the last
-  non-whitespace character, but we need to scan until we find the end of the
-  string or some other non-printing character to make sure we don't miss a
-  printing character after whitespace.
-*/
-    char *lastNonBlank = line - 1;
-    for (where = line; *where != '\0'; where++) {
-      if (*where != '\t' && *where < ' ') {
-        break;
-      }
-      if (*where != '\t' && *where != ' ') {
-        lastNonBlank = where;
-      }
-    }
-    *(lastNonBlank + 1) = '\0';
-    where = line;
-  }
-  /*
-  Munch through leading white space.
-*/
-  while (*where == ' ' || *where == '\t')
-    where++;
-  /*
-  See if we can separate a field; if so, copy it over into field for return.
-  If we're out of line, return the string "EOL".
-*/
-  char *saveWhere = where;
-  while (*where != ' ' && *where != '\t' && *where != '\0')
-    where++;
-  if (where != saveWhere) {
-    char save = *where;
-    *where = '\0';
-    field = saveWhere;
-    *where = save;
-  } else {
-    where = NULL;
-    field = "EOL";
-  }
-
-  return (field);
-}
-
-}
+#include "CoinParam.hpp"
+#include "CoinFileIO.hpp"
 
 /* Visible functions */
 
 namespace CoinParamUtils {
 
-/*
-  As mentioned above, cmdField set to -1 is the indication that we're reading
-  from stdin or a file.
-*/
-void setInputSrc(FILE *src)
+//#############################################################################
+//#############################################################################
 
+std::string printString(const std::string &input, int maxWidth)
 {
-  if (src != 0) {
-    cmdField = -1;
-    readSrc = src;
-  }
-}
-
-/*
-  A utility to allow clients to determine if we're processing parameters from
-  the comand line or otherwise.
-*/
-bool isCommandLine()
-
-{
-  assert(cmdField != 0);
-
-  if (cmdField > 0) {
-    return (true);
-  } else {
-    return (false);
-  }
-}
-
-/*
-  A utility to allow clients to determine if we're accepting parameters
-  interactively.
-*/
-bool isInteractive()
-
-{
-  assert(cmdField != 0);
-
-  if (cmdField < 0 && readSrc == stdin) {
-    return (true);
-  } else {
-    return (false);
-  }
-}
-
-/*
-  Utility functions for acquiring input.
-*/
-
-/*
-  Return the next field (word) from the current command line. Generally, this
-  is expected to be of the form `-param' or `--param', with special cases as
-  set out below.
-
-  If we're in interactive mode (cmdField == -1), nextField does all the work
-  to prompt the user and return the next field from the resulting input. It is
-  assumed that the user knows not to use `-' or `--' prefixes in interactive
-  mode.
-
-  If we're in command line mode (cmdField > 0), cmdField indicates the
-  current command line word. The order of processing goes like this:
-    * A stand-alone `-' is converted to `stdin'
-    * A stand-alone '--' is returned as a word; interpretation is up to the
-      client.
-    * A prefix of '-' or '--' is stripped from the field.
-  If the result is `stdin', it's assumed we're switching to interactive mode
-  and the user is prompted for another command.
-
-  Whatever results from the above sequence is returned to the client as the
-  next field. An empty string indicates end of input.
-
-  Prompt will be used by nextField if it's necessary to prompt the user for
-  a command (only when reading from stdin).
-
-  If provided, pfx is set to the prefix ("-", "--", or "") stripped from the
-  field. Lack of prefix is not necessarily an error because of the following
-  scenario:  To read a file, the verbose command might be "foo -import
-  myfile". But we might want to allow a short form, "foo myfile". And we'd
-  like "foo import" to be interpreted as "foo -import import" (i.e., import the
-  file named `import').
-*/
-
-std::string getCommand(int argc, const char *argv[],
-  const std::string prompt, std::string *pfx)
-
-{
-  std::string field = "EOL";
-  pendingVal = "";
-  int pfxlen;
-
-  if (pfx != 0) {
-    (*pfx) = "";
-  }
-  /*
-  Acquire the next field, and convert as outlined above if we're processing
-  command line parameters.
-*/
-  while (field == "EOL") {
-    pfxlen = 0;
-    if (cmdField > 0) {
-      if (cmdField < argc) {
-        field = argv[cmdField++];
-        if (field == "-") {
-          field = "stdin";
-        } else if (field == "--") { /* Prevent `--' from being eaten by next case. */
-        } else {
-          if (field[0] == '-') {
-            pfxlen = 1;
-            if (field[1] == '-')
-              pfxlen = 2;
-            if (pfx != 0)
-              (*pfx) = field.substr(0, pfxlen);
-            field = field.substr(pfxlen);
-          }
-        }
+   std::ostringstream buffer;
+   std::istringstream iss(input);
+   int currentWidth = 0;
+   std::string word;
+   while (iss >> word){
+      if (currentWidth >= maxWidth){
+         buffer << std::endl << word;
+         currentWidth = 0;
       } else {
-        field = "";
+         buffer << word;
+      }         
+      currentWidth += word.length();
+   }
+   return buffer.str();
+}
+
+std::string printString(const char *input, int maxWidth)
+{
+   return CoinParamUtils::printString(std::string(input), maxWidth);
+}
+
+//#############################################################################
+// Read into the input queue from any stream (file, string, etc.)   
+//#############################################################################
+
+void
+readFromStream(std::deque<std::string> &inputQueue,
+               std::istream &inputStream)
+{
+   std::string field;
+   while (inputStream >> field){
+      std::string::size_type found = field.find('=');
+      if (found != std::string::npos) {
+         inputQueue.push_back(field.substr(0, found));
+         inputQueue.push_back(field.substr(found + 1));
+      } else {
+         inputQueue.push_back(field);
       }
-    } else {
-      field = nextField(prompt.c_str());
-    }
-    if (field == "stdin") {
-      std::cout << "Switching to line mode" << std::endl;
-      cmdField = -1;
-      field = nextField(prompt.c_str());
-    }
-  }
-  /*
-  Are we left with something of the form param=value? If so, separate the
-  pieces, returning `param' and saving `value' for later use as per comments
-  at the head of the file.
-*/
-  std::string::size_type found = field.find('=');
-  if (found != std::string::npos) {
-    pendingVal = field.substr(found + 1);
-    field = field.substr(0, found);
+   }
+}
+
+//#############################################################################
+// Get input from the interactive command prompt and pass it to readFromStrem
+//#############################################################################
+
+void
+readInteractiveInput(std::deque<std::string> &inputQueue,
+                     const std::string &prompt)
+{
+   std::string input;
+
+   while (!input.length()) {
+#ifdef COINUTILS_HAS_READLINE
+     // Get a line from the user.
+     input = std::string(readline(prompt.c_str()));
+     // If the line has any text in it, save it on the history.
+     if (input.length() > 0) {
+       add_history(input.c_str());
+     }
+#else
+     std::cout << prompt;
+     fflush(stdout);
+     getline(std::cin, input); 
+#endif
+     if (!input.length())
+       std::cout << "Enter command, ? or end to exit." << std::endl;
+   }
+
+   std::istringstream inputStream(input);
+   CoinParamUtils::readFromStream(inputQueue, inputStream);
+}
+
+//#############################################################################
+// Get the next field from the input queue   
+//#############################################################################
+
+std::string
+getNextField(std::deque<std::string> &inputQueue, bool interactiveMode,
+             std::string prompt)
+{
+  if (inputQueue.empty() && interactiveMode){
+     CoinParamUtils::readInteractiveInput(inputQueue, prompt);
   }
 
-  return (field);
+  if (inputQueue.empty()){
+     return "";
+  }else{
+     std::string field = inputQueue.front();
+     inputQueue.pop_front();
+     std::string::size_type found = field.find('=');
+     if (found != std::string::npos) {
+        inputQueue.push_back(field[0] == '-' ? field.substr(0, found) :
+                             '-' + field.substr(0, found));
+        inputQueue.push_back(field.substr(found + 1));
+        field = inputQueue.front();
+        inputQueue.pop_front();
+     }
+     return field;
+  }
 }
+
+//#############################################################################
+//#############################################################################
 
 /*
   Function to look up a parameter keyword (name) in the parameter vector and
@@ -302,20 +164,20 @@ std::string getCommand(int argc, const char *argv[],
 */
 
 int lookupParam(std::string name, CoinParamVec &paramVec,
-  int *matchCntp, int *shortCntp, int *queryCntp)
+                int *matchCntp, int *shortCntp, int *queryCntp)
 
 {
   int retval = -3;
 
-  if (matchCntp != 0) {
-    *matchCntp = 0;
-  }
-  if (shortCntp != 0) {
-    *shortCntp = 0;
-  }
-  if (queryCntp != 0) {
-    *queryCntp = 0;
-  }
+  // crude fix to stop no match message on clp when in cbc
+  bool printMessage = true;
+  if (queryCntp && *queryCntp == 999)
+    printMessage = false;
+
+  *matchCntp = 0;
+  *shortCntp = 0;
+  *queryCntp = 0;
+
   /*
   Is there anything here at all? 
 */
@@ -379,6 +241,9 @@ int lookupParam(std::string name, CoinParamVec &paramVec,
     *shortCntp = shortCnt;
   }
   if (numQuery > 0) {
+    if (/* was numQuery! */  (matchCnt + shortCnt == 0) && printMessage){
+        std::cout << "Sorry, no match found!" << std::endl;
+     }
     retval = -1;
   } else {
     if (matchCnt + shortCnt == 0) {
@@ -398,8 +263,9 @@ int lookupParam(std::string name, CoinParamVec &paramVec,
   /*
   A unique match and no `?' in the name says we have our parameter. Return
   the result.
+  allow if exact match (e.g. -netlib)
 */
-  if (matchCnt == 1 && shortCnt == 0 && numQuery == 0) {
+  if (matchCnt == 1 /* && shortCnt == 0 */ && numQuery == 0) {
     assert(matchNdx >= 0 && matchNdx < static_cast< int >(paramVec.size()));
     return (matchNdx);
   }
@@ -435,144 +301,8 @@ int lookupParam(std::string name, CoinParamVec &paramVec,
   return (retval);
 }
 
-/*
-  Utility functions to acquire parameter values from the command line. For
-  all of these, a pendingVal is consumed if it exists.
-*/
-
-/*
-  Read a string and return a pointer to the string. Set valid to indicate the
-  result of parsing: 0: okay, 1: <unused>, 2: not present.
-*/
-
-std::string getStringField(int argc, const char *argv[], int *valid)
-
-{
-  std::string field;
-
-  if (pendingVal != "") {
-    field = pendingVal;
-    pendingVal = "";
-  } else {
-    field = "EOL";
-    if (cmdField > 0) {
-      if (cmdField < argc) {
-        field = argv[cmdField++];
-      }
-    } else {
-      field = nextField(0);
-    }
-  }
-
-  if (valid != 0) {
-    if (field != "EOL") {
-      *valid = 0;
-    } else {
-      *valid = 2;
-    }
-  }
-
-  return (field);
-}
-
-/*
-  Read an int and return the value. Set valid to indicate the result of
-  parsing: 0: okay, 1: parse error, 2: not present.
-*/
-
-int getIntField(int argc, const char *argv[], int *valid)
-
-{
-  std::string field;
-
-  if (pendingVal != "") {
-    field = pendingVal;
-    pendingVal = "";
-  } else {
-    field = "EOL";
-    if (cmdField > 0) {
-      if (cmdField < argc) {
-        field = argv[cmdField++];
-      }
-    } else {
-      field = nextField(0);
-    }
-  }
-  /*
-  The only way to check for parse error here is to set the system variable
-  errno to 0 and then see if it's nonzero after we try to convert the string
-  to integer.
-*/
-  int value = 0;
-  errno = 0;
-  if (field != "EOL") {
-    value = atoi(field.c_str());
-  }
-
-  if (valid != 0) {
-    if (field != "EOL") {
-      if (errno == 0) {
-        *valid = 0;
-      } else {
-        *valid = 1;
-      }
-    } else {
-      *valid = 2;
-    }
-  }
-
-  return (value);
-}
-
-/*
-  Read a double and return the value. Set valid to indicate the result of
-  parsing: 0: okay, 1: bad parse, 2: not present. But we'll never return
-  valid == 1 because atof gives us no way to tell.)
-*/
-
-double getDoubleField(int argc, const char *argv[], int *valid)
-
-{
-  std::string field;
-
-  if (pendingVal != "") {
-    field = pendingVal;
-    pendingVal = "";
-  } else {
-    field = "EOL";
-    if (cmdField > 0) {
-      if (cmdField < argc) {
-        field = argv[cmdField++];
-      }
-    } else {
-      field = nextField(0);
-    }
-  }
-  /*
-  The only way to check for parse error here is to set the system variable
-  errno to 0 and then see if it's nonzero after we try to convert the string
-  to integer.
-*/
-  double value = 0.0;
-  errno = 0;
-  if (field != "EOL") {
-    value = atof(field.c_str());
-  }
-
-  if (valid != 0) {
-    if (field != "EOL") {
-      if (errno == 0) {
-        *valid = 0;
-      } else {
-        *valid = 1;
-      }
-    } else {
-      *valid = 2;
-    }
-  }
-
-  return (value);
-}
+//#############################################################################
+//#############################################################################
 
 /*
   Utility function to scan a parameter vector for matches. Sets matchNdx to
@@ -592,7 +322,7 @@ double getDoubleField(int argc, const char *argv[], int *valid)
 */
 
 int matchParam(const CoinParamVec &paramVec, std::string name,
-  int &matchNdx, int &shortCnt)
+               int &matchNdx, int &shortCnt)
 
 {
   int vecLen = static_cast< int >(paramVec.size());
@@ -602,9 +332,6 @@ int matchParam(const CoinParamVec &paramVec, std::string name,
   shortCnt = 0;
 
   for (int i = 0; i < vecLen; i++) {
-    CoinParam *param = paramVec[i];
-    if (param == 0)
-      continue;
     int match = paramVec[i]->matches(name);
     if (match == 1) {
       matchNdx = i;
@@ -657,6 +384,9 @@ void printIt(const char *msg)
   return;
 }
 
+//#############################################################################
+//#############################################################################
+
 /*
   Utility function for the case where a name matches a single parameter, but
   either it's short, or the user wanted help, or both.
@@ -682,10 +412,7 @@ void shortOrHelpOne(CoinParamVec &paramVec,
   if (matchNdx < 0) {
     int match = 0;
     for (i = 0; i < numParams; i++) {
-      CoinParam *param = paramVec[i];
-      if (param == 0)
-        continue;
-      int match = param->matches(name);
+      int match = paramVec[i]->matches(name);
       if (match != 0) {
         lclNdx = i;
         break;
@@ -717,13 +444,16 @@ void shortOrHelpOne(CoinParamVec &paramVec,
     if (numQuery == 1) {
       std::cout << paramVec[lclNdx]->shortHelp();
     } else {
-      paramVec[lclNdx]->printLongHelp();
+      std::cout << paramVec[lclNdx]->printLongHelp();
     }
   }
   std::cout << std::endl;
 
   return;
 }
+
+//#############################################################################
+//#############################################################################
 
 /*
   Utility function for the case where a name matches multiple parameters.
@@ -745,15 +475,13 @@ void shortOrHelpMany(CoinParamVec &paramVec, std::string name, int numQuery)
   int lineLen = 0;
   bool printed = false;
   for (int i = 0; i < numParams; i++) {
-    CoinParam *param = paramVec[i];
-    if (param == 0)
-      continue;
-    int match = param->matches(name);
-    if (match > 0) {
-      std::string nme = param->matchName();
+    int match = paramVec[i]->matches(name);
+    if (match > 0 &&
+        paramVec[i]->getDisplayPriority() != CoinParam::displayPriorityNone) {
+      std::string nme = paramVec[i]->matchName();
       int len = static_cast< int >(nme.length());
       if (numQuery >= 2) {
-        std::cout << nme << " : " << param->shortHelp();
+        std::cout << nme << " : " << paramVec[i]->shortHelp();
         std::cout << std::endl;
       } else {
         lineLen += 2 + len;
@@ -773,6 +501,9 @@ void shortOrHelpMany(CoinParamVec &paramVec, std::string name, int numQuery)
 
   return;
 }
+
+//#############################################################################
+//#############################################################################
 
 /*
   A generic help message that explains the basic operation of parameter
@@ -814,6 +545,9 @@ void printGenericHelp()
   return;
 }
 
+//#############################################################################
+//#############################################################################
+
 /*
   Utility function for various levels of `help' command. The entries between
   paramVec[firstParam] and paramVec[lastParam], inclusive, will be printed.
@@ -827,22 +561,22 @@ void printGenericHelp()
 */
 
 void printHelp(CoinParamVec &paramVec, int firstParam, int lastParam,
-  std::string prefix,
-  bool shortHelp, bool longHelp, bool hidden)
-
+  std::string prefix, bool shortHelp, bool longHelp, bool hidden)
 {
   bool noHelp = !(shortHelp || longHelp);
   int i;
   int pfxLen = static_cast< int >(prefix.length());
   bool printed = false;
+  CoinParam *param; 
 
   if (noHelp) {
     int lineLen = 0;
     for (i = firstParam; i <= lastParam; i++) {
-      CoinParam *param = paramVec[i];
-      if (param == 0)
-        continue;
-      if (param->display() || hidden) {
+      param = paramVec[i]; 
+      if (param == 0){
+         continue;
+      }
+      if (param->getDisplayPriority() || hidden) {
         std::string nme = param->matchName();
         int len = static_cast< int >(nme.length());
         if (!printed) {
@@ -865,10 +599,11 @@ void printHelp(CoinParamVec &paramVec, int firstParam, int lastParam,
     }
   } else if (shortHelp) {
     for (i = firstParam; i <= lastParam; i++) {
-      CoinParam *param = paramVec[i];
-      if (param == 0)
-        continue;
-      if (param->display() || hidden) {
+      param = paramVec[i]; 
+      if (param == 0){
+         continue;
+      }
+      if (param->getDisplayPriority() || hidden) {
         std::cout << std::endl
                   << prefix;
         std::cout << param->matchName();
@@ -879,10 +614,11 @@ void printHelp(CoinParamVec &paramVec, int firstParam, int lastParam,
     std::cout << std::endl;
   } else if (longHelp) {
     for (i = firstParam; i <= lastParam; i++) {
-      CoinParam *param = paramVec[i];
-      if (param == 0)
-        continue;
-      if (param->display() || hidden) {
+      param = paramVec[i]; 
+      if (param == 0){
+         continue;
+      }
+      if (param->getDisplayPriority() || hidden) {
         std::cout << std::endl
                   << prefix;
         std::cout << "Command: " << param->matchName();
@@ -898,6 +634,71 @@ void printHelp(CoinParamVec &paramVec, int firstParam, int lastParam,
   std::cout << std::endl;
 
   return;
+}
+
+//#############################################################################
+//#############################################################################
+
+/* Take in file name and directory name, determine whether file name 
+   is absolute and if not, prepend with directory name. */
+
+void processFile(std::string &fileName, std::string dirName,
+                 bool *fileExists){
+
+   if (fileName == "--" || fileName == "stdin"){
+      // This is for the case of stdin
+      fileName = "-";
+      if (fileExists != NULL){
+         *fileExists = true;
+      }
+   } 
+   if (fileName == "stdin_lp"){
+      // This is for the case of stdin
+      fileName = "-lp";
+      if (fileExists != NULL){
+         *fileExists = true;
+      }
+   } 
+
+   if (fileName == "$" || fileName == ""){
+      fileName = "";
+      return;
+   }
+   if (fileName[0] != '/' && fileName[0] != '\\' &&
+       !(fileName.length() >= 2 && fileName[1] == ':' &&
+         (fileName[0] >= 'a' && fileName[0] <= 'z' ||
+          fileName[0] >= 'A' && fileName[0] <= 'Z'))) {
+      fileName = dirName + fileName;
+   }
+   if (fileExists != NULL){
+      *fileExists = fileCoinReadable(fileName);
+   }
+}
+
+//#############################################################################
+//#############################################################################
+
+void formInputQueue(std::deque<std::string> &inputQueue,
+                    std::string commandName,
+                    int argc, char **argv)
+{
+   std::string::size_type found;
+   for (int i = 1; i < argc; i++){
+      std::string tmp(argv[i]);
+      if (tmp == commandName) {
+         // For some reason, the command can sometimes be listed more than once
+         // in argv
+         continue;
+      }
+      found = tmp.find('=');
+      if (found != std::string::npos) {
+         inputQueue.push_back(tmp[0] == '-' ? tmp.substr(0, found) :
+                              '-' + tmp.substr(0, found));
+         inputQueue.push_back(tmp.substr(found + 1));
+      } else {
+         inputQueue.push_back(tmp);
+      }
+   }
 }
 
 } // end namespace CoinParamUtils

@@ -47,6 +47,8 @@ CoinLpIO::CoinLpIO()
   , numberElements_(0)
   , matrixByColumn_(NULL)
   , matrixByRow_(NULL)
+  , quadraticObjective_(NULL)
+  , quadraticList_()
   , rowlower_(NULL)
   , rowupper_(NULL)
   , collower_(NULL)
@@ -63,7 +65,7 @@ CoinLpIO::CoinLpIO()
   , epsilon_(1e-5)
   , numberAcross_(10)
   , decimals_(9)
-  , wasMaximization_(false)
+  , wasMaximization_(0)
   , lineNumber_(0)
   , input_(NULL)
 {
@@ -100,6 +102,8 @@ CoinLpIO::CoinLpIO(const CoinLpIO &rhs)
   , numberElements_(0)
   , matrixByColumn_(NULL)
   , matrixByRow_(NULL)
+  , quadraticObjective_(NULL)
+  , quadraticList_()
   , rowlower_(NULL)
   , rowupper_(NULL)
   , collower_(NULL)
@@ -204,6 +208,9 @@ void CoinLpIO::gutsOfCopy(const CoinLpIO &rhs)
       set_[j] = new CoinSet(*rhs.set_[j]);
   }
 
+  if (rhs.quadraticObjective_)
+    quadraticObjective_ = new CoinPackedMatrix(*rhs.quadraticObjective_);
+
   free(fileName_);
   free(problemName_);
   fileName_ = CoinStrdup(rhs.fileName_);
@@ -306,6 +313,8 @@ void CoinLpIO::freeAll()
   matrixByColumn_ = NULL;
   delete matrixByRow_;
   matrixByRow_ = NULL;
+  delete quadraticObjective_;
+  quadraticObjective_ = NULL;
   free(rowupper_);
   rowupper_ = NULL;
   free(rowlower_);
@@ -1094,6 +1103,51 @@ int CoinLpIO::writeLp(FILE *fp, const bool useRowNames)
       fprintf(fp, "\n");
     }
   }
+  // Quadratic objective
+  if (quadraticObjective_) {
+    const CoinBigIndex * start = quadraticObjective_->getVectorStarts();
+    const int * column = quadraticObjective_->getIndices();
+    const double * element = quadraticObjective_->getElements();
+    fprintf (fp," + [ ");
+    cnt_print++;
+    if (cnt_print % numberAcross == 0) 
+      fprintf(fp, "\n");
+    bool first = true;
+    double lp_eps = getEpsilon();
+    char coeff[24];
+    for (int iCol = 0;iCol < ncol;iCol++) {
+      for (CoinBigIndex j=start[iCol]; j < start[iCol+1];j++) {
+	int iRow = column[j];
+	double coefficient = element[j];
+	if (fabs(coefficient)<lp_eps)
+	  continue;
+	if (!first) {
+	  if (coefficient > 0.0)
+	    fprintf(fp,"+");
+	} else {
+	  first = false;
+	}
+	if (iCol != iRow)
+	  coefficient *= 2.0;
+	void CoinConvertDouble(int section, int formatType, double value, char outputValue[24]);
+	CoinConvertDouble(0,0,coefficient,coeff);
+	int n = strlen(coeff)-1;
+	while (coeff[n]==' ')
+	  n--;
+	coeff[n+1] = '\0';
+	if (iCol == iRow) {
+	  fprintf(fp,"%s %s^2 ",coeff,colNames[iCol]);
+	} else {
+	  fprintf(fp,"%s %s * %s ",coeff,colNames[iCol],
+		  colNames[iRow]);
+	}
+	cnt_print++;
+	if (cnt_print % numberAcross == 0) 
+	  fprintf(fp, "\n");
+      }
+    }
+    fprintf (fp,"] /2\n");
+  }
 
   fprintf(fp, "Subject To\n");
 
@@ -1320,7 +1374,7 @@ int CoinLpIO::writeLp(FILE *fp, const bool useRowNames)
 } /* writeLp */
 
 /*************************************************************************/
-int CoinLpIO::find_obj() const
+int CoinLpIO::find_obj()
 {
 
   char buff[1024];
@@ -1343,6 +1397,7 @@ int CoinLpIO::find_obj() const
   if (((lbuff == 8) && (CoinStrNCaseCmp(buff, "minimize", 8) == 0)) || ((lbuff == 3) && (CoinStrNCaseCmp(buff, "min", 3) == 0))) {
     return (1);
   }
+  wasMaximization_ = 1; // say maximize (for qp)
   return (-1);
 } /* find_obj */
 
@@ -1519,7 +1574,6 @@ int CoinLpIO::are_invalid_names(char const *const *const vnames,
       card_vnames, getNumRows());
     CoinLpIOError(str, "are_invalid_names", "CoinLpIO", __FILE__, __LINE__);
   }
-
   for (i = 0; i < card_vnames; i++) {
 
     if ((check_ranged) && (i < nrows) && (rSense[i] == 'R')) {
@@ -1529,11 +1583,6 @@ int CoinLpIO::are_invalid_names(char const *const *const vnames,
     }
     flag = is_invalid_name(vnames[i], is_ranged);
     if (flag) {
-      char printBuffer[512];
-      sprintf(printBuffer, "### CoinLpIO::are_invalid_names(): Invalid name: vnames[%d]: %s",
-        i, vnames[i]);
-      handler_->message(COIN_GENERAL_WARNING, messages_) << printBuffer
-                                                         << CoinMessageEol;
       invalid = flag;
     }
   }
@@ -1618,6 +1667,111 @@ int CoinLpIO::read_monom_obj(double *coeff, char **name, int *cnt,
   } else {
     coeff[*cnt] = 1;
     strcpy(loc_name, start);
+    // check if quadratic objective
+    if (start[0]=='[' && strlen(start)==1) {
+      // Save mult
+      double overallMult = mult;
+      if (wasMaximization_ > 0)
+	overallMult = - mult;
+      while (true) {
+	double coefficient = 1.0;
+	std::string x="x";
+	std::string y="y";
+	fscanfLpIO(buff);
+	if (buff[0]==']') 
+	  break; // finished
+	start = buff;
+	mult = 1;
+	if (buff[0] == '+') {
+	  mult = 1;
+	  if (strlen(buff) == 1) {
+	    fscanfLpIO(buff);
+	    start = buff;
+	  } else {
+	    start = &(buff[1]);
+	  }
+	}
+
+	if (buff[0] == '-') {
+	  mult = -1;
+	  if (strlen(buff) == 1) {
+	    fscanfLpIO(buff);
+	    start = buff;
+	  } else {
+	    start = &(buff[1]);
+	  }
+	}
+
+	if (first_is_number(start)) {
+	  coefficient = atof(start);
+	  sprintf(buff, "aa");
+	  fscanfLpIO(buff);
+	  start = buff;
+	}
+	// see if ^ or * in string
+	int gotxx = 0;
+	if (strchr(start,'^')) {
+	  gotxx = 1;
+	  char * zap = strchr(start,'^');
+	  *zap = '\0';
+	  x = start;
+	  start = zap+1;
+	} else if (strchr(start,'*')) {
+	  gotxx = 2;
+	  char * zap = strchr(start,'*');
+	  *zap = '\0';
+	  x = start;
+	  start = zap+1;
+	} else {
+	  x = start;
+	}
+	if (!gotxx) {
+	  // next must be ^ or *
+	  fscanfLpIO(buff);
+	  int length = strlen(buff);
+	  if (buff[0]=='^') {
+	    if (length==1) {
+	      fscanfLpIO(buff);
+	      assert (buff[0]=='2' && strlen(buff)==1);
+	    } else {
+	      assert (buff[1]=='2' && length==2);
+	    }
+	    y = x;
+	  } else if (buff[0]=='*') {
+	    sprintf(loc_name, "bb");
+	    fscanfLpIO(loc_name);
+	    y = loc_name;
+	  } else {
+	    char str[100];
+	    sprintf(str, "### ERROR:expected ^ or * in quadratic objective\n");
+	    throw CoinError(str, "read_monom_obj", "CoinLpIO", __FILE__, __LINE__);
+	  }
+	} else if (gotxx==1) {
+	  // ^
+	  int length = strlen(start);
+	  if (length==0) {
+	    fscanfLpIO(buff);
+	    assert (buff[0]=='2' && strlen(buff)==1);
+	  } else if (length==1) {
+	    assert (start[0]=='2');
+	  }
+	  y = x;
+	} else {
+	  // *
+	  int length = strlen(start);
+	  if (length==0) {
+	    fscanfLpIO(buff);
+	    y = buff;
+	  } else {
+	    y = start;
+	  }
+	}
+	CoinLpQuadratic quadObj(coefficient*mult*overallMult,x,y);
+	quadraticList_.push_back(quadObj);
+      }
+      fscanfLpIO(buff); // get Subject
+      return 2; // expect To (of Subject To)
+    }
   }
 
   read_st = is_subject_to(loc_name);
@@ -1915,6 +2069,7 @@ void CoinLpIO::readLp()
   char buff[1024];
   bufferPosition_ = 0;
   bufferLength_ = 0;
+  fakeBufferLength_ = 0;
   eofFound_ = false;
   lineNumber_ = 0;
 
@@ -2547,7 +2702,7 @@ void CoinLpIO::readLp()
     for (int j = 0; j < num_objectives_; j++) {
       objectiveOffset_[j] = -objectiveOffset_[j];
     }
-    wasMaximization_ = true;
+    wasMaximization_ = -1;
   }
 
   
@@ -3006,26 +3161,50 @@ void CoinLpIO::newLanguage(CoinMessages::Language language)
 int CoinLpIO::newCardLpIO() const
 {
   while (bufferPosition_ == bufferLength_) {
+    // check if really new line
+    if (!fakeBufferLength_)
+      lineNumber_++;
     // new line
     bufferPosition_ = 0;
     bufferLength_ = 0;
-    char *ok = input_->gets(inputBuffer_, 1024);
-    lineNumber_++;
+    // maximum length of name 100? so this can be 900?
+#define BUFFER_LENGTH 900
+    char * buffer = inputBuffer_;
+    int getLength = 1024;
+    if (fakeBufferLength_) {
+      // still stuff in fake buffer
+      strcpy(inputBuffer_,fakeBuffer_);
+      buffer = inputBuffer_+fakeBufferLength_;
+      getLength -= fakeBufferLength_;
+      fakeBufferLength_ = 0;
+    }
+    char * ok = input_->gets(buffer, getLength);
     if (!ok)
       return 0;
     int length = strlen(inputBuffer_);
-    // take off blanks or below
-    if (length  && length < 1023) {
-      length--;
-      while(length>=0) {
-	if (inputBuffer_[length]<=' ')
-	  length--;
-	else
+    if (length == 1023) {
+      // find first space after 900
+      char * space = strchr(inputBuffer_+900,' ');
+      assert (space);
+      // copy rest
+      strcpy(fakeBuffer_,space+1);
+      space[1] = '\n';
+      space[2] = '\0';
+      fakeBufferLength_ = strlen(fakeBuffer_);
+      assert (fakeBufferLength_<=130);
+    } else {
+      // complete line in - make sure \n at end
+      int usefulChar;
+      for (usefulChar=length-1;usefulChar>=0;usefulChar--) {
+	char thisChar = inputBuffer_[usefulChar];
+	if (thisChar>=' ') {
 	  break;
+	}
       }
-      // but put back something
-      inputBuffer_[length+1]='\n';  
-      inputBuffer_[length+2]='\0';
+      // add \n\0
+      inputBuffer_[usefulChar+1]='\n';
+      inputBuffer_[usefulChar+2]='\0';
+      length = usefulChar+3;
     }
     memcpy(originalBuffer_,inputBuffer_,length+1);
     originalBuffer_[length+1] = '\0'; 
@@ -3039,7 +3218,6 @@ int CoinLpIO::newCardLpIO() const
           inputBuffer_[bufferLength_++] = inputBuffer_[i];
       }
     }
-    bool gotEol = false;
     while (nn < 1024) {
       if (inputBuffer_[nn] == ':') {
         // take out blank before
@@ -3050,20 +3228,18 @@ int CoinLpIO::newCardLpIO() const
         inputBuffer_[nn] = ' ';
       if (inputBuffer_[nn] == '\0' || inputBuffer_[nn] == '\n' || inputBuffer_[nn] == '\r') {
         if (inputBuffer_[nn] == '\n' || inputBuffer_[nn] == '\r')
-          gotEol = true;
+          inputBuffer_[nn] = '\n';
         break;
       }
       if (inputBuffer_[nn] != ' ' || inputBuffer_[nn + 1] != ' ')
         inputBuffer_[bufferLength_++] = inputBuffer_[nn];
       nn++;
     }
-    if (gotEol) {
-      //inputBuffer_[bufferLength_]='\n';
-      inputBuffer_[bufferLength_] = '\0';
-    }
+    //inputBuffer_[bufferLength_]='\n';
+    inputBuffer_[bufferLength_] = '\0';
     if (inputBuffer_[0] == ' ')
       bufferPosition_++;
-    if (!gotEol)
+    if (fakeBufferLength_)
       bufferLength_ = -bufferLength_;
   }
   return abs(bufferLength_);
@@ -3165,4 +3341,79 @@ CoinLpIO::warnError(const char * printBuffer, int line) const
       generalPrint << CoinMessageEol;
   }
 #endif
+}
+// Get pointer to quadratic objective (or NULL)
+CoinPackedMatrix *
+CoinLpIO::getQuadraticObjective()
+{
+  if (quadraticObjective_) {
+    return quadraticObjective_;
+  } else if (!quadraticList_.size()) {
+    return NULL;
+  } else {
+    // create objective
+    int numberElements = quadraticList_.size();
+    int * row = new int[2*numberElements];
+    int * col = new int[numberElements];
+    int * counts = new int[numberColumns_];
+    memset(counts,0,numberColumns_*sizeof(int));
+    CoinBigIndex * starts = new CoinBigIndex[numberColumns_+1];
+    double * element = new double[2*numberElements];
+    for (int i=0;i<numberElements;i++) {
+      CoinLpQuadratic triple = quadraticList_[i];
+      double coefficient = triple.first;
+      std::string x = triple.second;
+      std::string y = triple.third;
+      int ix = columnIndex(x.c_str());
+      if (ix<0) {
+	char str[8192];
+	sprintf(str, "### ERROR: unknown column in quadratic objective %s\n",
+		x.c_str());
+	throw CoinError(str, "insertHash", "CoinLpIO", __FILE__, __LINE__);
+      }
+      counts[ix]++;
+      int iy = columnIndex(y.c_str());
+      if (iy<0) {
+	char str[8192];
+	sprintf(str, "### ERROR: unknown column in quadratic objective %s\n",
+		y.c_str());
+	throw CoinError(str, "insertHash", "CoinLpIO", __FILE__, __LINE__);
+      }
+      col[i] = ix;
+      row[i] = iy;
+      if (ix!=iy)
+	coefficient*=0.5;
+      element[i] = coefficient;
+    }
+    // sort
+    starts[0] = 0;
+    int n = 0;
+    for (int i=0;i<numberColumns_;i++) {
+      n += counts[i];
+      counts[i] = 0;
+      starts[i+1]=n;
+    }
+    double * element2 = element+numberElements;
+    int * row2 = row+numberElements;
+    for (int i=0;i<numberElements;i++) {
+      int iCol = col[i];
+      CoinBigIndex iPut = starts[iCol] + counts[iCol];
+      counts[iCol]++;
+      row2[iPut] = row[i];
+      element2[iPut] = element[i];
+    }
+    quadraticObjective_ =
+      new CoinPackedMatrix(true,numberColumns_,numberColumns_,numberElements,
+			   element2,row2,starts,NULL);
+    delete [] row;
+    delete [] col;
+    delete [] element;
+    delete [] starts;
+    delete [] counts;
+    return quadraticObjective_;
+  }
+}
+void CoinLpIO::setQuadraticObjective(CoinPackedMatrix * matrix)
+{
+  quadraticObjective_ = new CoinPackedMatrix(*matrix);
 }

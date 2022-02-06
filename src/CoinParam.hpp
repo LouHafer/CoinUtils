@@ -13,10 +13,14 @@
 */
 
 #include <vector>
+#include <deque>
 #include <string>
 #include <cstdio>
+#include <map>
 
 #include "CoinUtilsConfig.h"
+#include "CoinFinite.hpp"
+#include "CoinHelperFunctions.hpp"
 
 /*! \class CoinParam
     \brief A base class for `keyword value' command line parameters.
@@ -92,12 +96,28 @@ public:
 	   which they are added, starting from zero.
     </ul>
   */
-  typedef enum { coinParamInvalid = 0,
-    coinParamAct,
-    coinParamInt,
-    coinParamDbl,
-    coinParamStr,
-    coinParamKwd } CoinParamType;
+  enum CoinParamType {
+     paramInvalid = 0,
+     paramAct,
+     paramInt,
+     paramDbl,
+     paramStr,
+     paramDir,
+     paramFile,
+     paramKwd
+  };
+
+  enum CoinDisplayPriority {
+     displayPriorityNone = 0,
+     displayPriorityLow,
+     displayPriorityHigh
+  };
+
+  enum ParamPushMode {
+     pushDefault = 0,
+     pushOn = 1,
+     pushOff = 2
+  };
 
   /*! \brief Type declaration for push and pull functions.
 
@@ -106,7 +126,7 @@ public:
     convention, however; the base class makes no use of the push and pull
     functions and has no hardcoded interpretation of the return code.
   */
-  typedef int (*CoinParamFunc)(CoinParam *param);
+  typedef int (*CoinParamFunc)(CoinParam &param);
 
   //@}
 
@@ -128,85 +148,117 @@ public:
     constructor for an integer parameter.
   */
   CoinParam(std::string name, std::string help,
-    double lower, double upper, double dflt = 0.0,
-    bool display = true);
+            double lower = -COIN_DBL_MAX, double upper = COIN_DBL_MAX,
+            std::string longHelp = "",
+            CoinDisplayPriority displayPriority = displayPriorityHigh);
 
   /*! \brief Constructor for a parameter with an integer value
   
     The default value is 0.
   */
   CoinParam(std::string name, std::string help,
-    int lower, int upper, int dflt = 0,
-    bool display = true);
+            int lower = -COIN_INT_MAX, int upper = COIN_INT_MAX,
+            std::string longHelp = "",
+            CoinDisplayPriority displayPriority = displayPriorityHigh);
 
-  /*! \brief Constructor for a parameter with keyword values
+  /*! \brief Constructor for any parameter taking a string (or no) value 
+    (all others). Type is not optional to resolve ambiguity.
 
-    The string supplied as \p firstValue becomes the first value-keyword.
-    Additional value-keywords can be added using appendKwd().  It's necessary
-    to specify both the first value-keyword (\p firstValue) and the default
-    value-keyword index (\p dflt) in order to distinguish this constructor
-    from the constructors for string and action parameters.
-
-    Value-keywords are associated with an integer, starting with zero and
-    increasing as each keyword is added.  The value-keyword given as \p
-    firstValue will be associated with the integer zero. The integer supplied
-    for \p dflt can be any value, as long as it will be valid once all
-    value-keywords have been added.
+    The default value is "" for all such parameter types
   */
-  CoinParam(std::string name, std::string help,
-    std::string firstValue, int dflt, bool display = true);
-
-  /*! \brief Constructor for a string parameter
-
-    For some compilers, the default value (\p dflt) must be specified
-    explicitly with type std::string to distinguish the constructor for a
-    string parameter from the constructor for an action parameter. For
-    example, use std::string("default") instead of simply "default", or use a
-    variable of type std::string.
-  */
-  CoinParam(std::string name, std::string help,
-    std::string dflt, bool display = true);
-
-  /*! \brief Constructor for an action parameter */
-
-  CoinParam(std::string name, std::string help,
-    bool display = true);
+  CoinParam(std::string name, CoinParamType type, std::string help,
+            std::string longHelp = "",
+            CoinDisplayPriority displayPriority = displayPriorityHigh);
 
   /*! \brief Copy constructor */
-
   CoinParam(const CoinParam &orig);
 
   /*! \brief Clone */
-
   virtual CoinParam *clone();
 
   /*! \brief Assignment */
-
   CoinParam &operator=(const CoinParam &rhs);
 
   /*! \brief  Destructor */
-
   virtual ~CoinParam();
 
   //@}
 
+  /*! \name Methods to initialize parameters already constructed */
+  //@{
+
+  /*! \brief These mirror the constructors with the addition of long help */
+  void setup(std::string name, std::string help,
+             double lower = -COIN_DBL_MAX, double upper = COIN_DBL_MAX,
+             std::string longHelp = "",
+             CoinDisplayPriority display = displayPriorityHigh);
+
+  void setup(std::string name, std::string help,
+             int lower = -COIN_INT_MAX, int upper = COIN_INT_MAX,
+             std::string longHelp = "",
+             CoinDisplayPriority display = displayPriorityHigh);
+
+  void setup(std::string name, std::string help, std::string longHelp = "",
+             CoinDisplayPriority display = displayPriorityHigh);
+  
+  //@}
   /*! \name Methods to query and manipulate the value(s) of a parameter */
   //@{
 
-  /*! \brief Add an additional value-keyword to a keyword parameter */
+  /*! Set the value of a parameter of any type */
+  int setVal(std::string value, std::string *message = NULL,
+             ParamPushMode pMode = pushDefault);
+  int setVal(double value, std::string *message = NULL,
+             ParamPushMode pMode = pushDefault);
+  int setVal(int value, std::string *message = NULL,
+             ParamPushMode pMode = pushDefault);
+  
+  /*! Set the default value of a parameter of any type */
+  int setDefault(std::string value, std::string *message = NULL);
+  int setDefault(double value, std::string *message = NULL);
+  int setDefault(int value, std::string *message = NULL);
+  
+  /*! Restore the default value of a parameter of any type */
+  int restoreDefault();
 
+  /*! Get the value of a parameter of any type */ 
+  int getVal(std::string &value) const;
+  int getVal(double &value) const;
+  int getVal(int &value) const;
+
+  /*! Try to read the value of a parameter from the input queue*/ 
+  int readValue(std::deque<std::string> &inputQueue, std::string &value,
+               std::string *message = NULL);
+  int readValue(std::deque<std::string> &inputQueue, int &value,
+                std::string *message = NULL);
+  int readValue(std::deque<std::string> &inputQueue, double &value,
+                std::string *message = NULL);
+
+  /*! \brief Add an additional value-keyword to a keyword parameter */
+  void appendKwd(std::string kwd, int index);
+
+  /*! \brief Add an additional value-keyword to a keyword parameter,
+    generating sequential mode values */
   void appendKwd(std::string kwd);
 
   /*! \brief Return the integer associated with the specified value-keyword
   
     Returns -1 if no value-keywords match the specified string.
   */
-  int kwdIndex(std::string kwd) const;
+  int kwdToMode(std::string kwd) const;
 
   /*! \brief Return the value-keyword that is the current value of the
 	     keyword parameter
   */
   std::string kwdVal() const;
+
+  /*! \brief Return the integer mode value of the current keyword parameter
+  */
+  int modeVal() const;
+
+  /*! \brief Return the string for an integer mode of keyword parameter
+  */
+  std::string  modeString(int value) const;
 
   /*! \brief Set the value of the keyword parameter using the integer
 	     associated with a value-keyword.
@@ -214,7 +266,16 @@ public:
     If \p printIt is true, the corresponding value-keyword string will be
     echoed to std::cout.
   */
-  void setKwdVal(int value, bool printIt = false);
+  int setModeVal(int value, std::string *message = NULL,
+                 ParamPushMode pMode = pushDefault);
+
+  /*! \brief Set the default value of the keyword parameter using the integer
+	     associated with a value-keyword.
+  
+    If \p printIt is true, the corresponding value-keyword string will be
+    echoed to std::cout.
+  */
+  int setModeValDefault(int value, std::string *message = NULL);
 
   /*! \brief Set the value of the keyword parameter using a value-keyword
 	     string.
@@ -222,43 +283,112 @@ public:
     The given string will be tested against the set of value-keywords for
     the parameter using the shortest match rules.
   */
-  void setKwdVal(const std::string value);
+  int setKwdVal(const std::string value, std::string *message = NULL,
+                ParamPushMode pMode = pushDefault);
+
+  /*! \brief Set the default value of the keyword parameter using a value-keyword
+	     string.
+  
+    The given string will be tested against the set of value-keywords for
+    the parameter using the shortest match rules.
+  */
+  int setKwdValDefault(const std::string value, std::string *message = NULL);
 
   /*! \brief Prints the set of value-keywords defined for this keyword
 	     parameter
   */
-  void printKwds() const;
+  std::string printKwds() const;
+
+  /// Set of valid value-keywords for a keyword parameter
+  const std::map<std::string, int>& definedKwds() const
+  {
+    return definedKwds_;
+  }
+
+  /// Valid value-keywords for a keyword parameter sorted by integer mode
+  std::vector<std::string> definedKwdsSorted() const;
 
   /*! \brief Set the value of a string parameter */
+  int setStrVal(std::string value, std::string *message = NULL,
+                ParamPushMode pMode = pushDefault);
 
-  void setStrVal(std::string value);
+  /*! \brief Set the default value of a string parameter */
+  int setStrValDefault(std::string value, std::string *message = NULL);
 
   /*! \brief Get the value of a string parameter */
-
   std::string strVal() const;
 
-  /*! \brief Set the value of a double parameter */
+  /*! \brief Set the value of a directory parameter */
+  int setDirName(std::string value, std::string *message = NULL,
+                 ParamPushMode pMode = pushDefault);
 
-  void setDblVal(double value);
+  /*! \brief Set the default value of a directory parameter */
+  int setDirNameDefault(std::string value, std::string *message = NULL);
+
+  /*! \brief Get the value of a directory parameter */
+  std::string dirName() const;
+
+  /*! \brief Set the value of a file name parameter */
+  int setFileName(std::string value, std::string *message = NULL,
+                  ParamPushMode pMode = pushDefault);
+
+  /*! \brief Set the default value of a file name parameter */
+  int setFileNameDefault(std::string value, std::string *message = NULL);
+
+  /*! \brief Get the value of a file name parameter */
+  std::string fileName() const;
+
+  /*! \brief Set the value of a double parameter */
+  int setDblVal(double value, std::string *message = NULL,
+                ParamPushMode pMode = pushDefault);
+
+  /*! \brief Set the default value of a double parameter */
+  int setDblValDefault(double value, std::string *message = NULL);
 
   /*! \brief Get the value of a double parameter */
-
   double dblVal() const;
 
-  /*! \brief Set the value of a integer parameter */
+  /*! \brief Set the lower value of an double parameter */
+  void setLowerDblVal(double value);
 
-  void setIntVal(int value);
+  /*! \brief Get the lower value of a double parameter */
+  double lowerDblVal() const;
+
+  /*! \brief Set the upper value of a double parameter */
+  void setUpperDblVal(double value);
+
+  /*! \brief Get the upper value of a double parameter */
+  double upperDblVal() const;
+
+  /*! \brief Set the value of a integer parameter */
+  int setIntVal(int value, std::string *message = NULL,
+                ParamPushMode pMode = pushDefault);
+
+  /*! \brief Set the value of a integer parameter */
+  int setIntValDefault(int value, std::string *message = NULL);
 
   /*! \brief Get the value of a integer parameter */
-
   int intVal() const;
 
-  /*! \brief Add a short help string to a parameter */
+  /*! \brief Set the lower value of an integer parameter */
+  void setLowerIntVal(int value);
 
+  /*! \brief Get the lower value of a integer parameter */
+  int lowerIntVal() const;
+
+  /*! \brief Set the upper value of a integer parameter */
+  void setUpperIntVal(int value);
+
+  /*! \brief Get the upper value of a integer parameter */
+  int upperIntVal() const;
+
+  /*! \brief Print possible options for a keyword parameter */
+  void printOptions(std::string *message = NULL);
+
+  /*! \brief Add a short help string to a parameter */
   inline void setShortHelp(const std::string help) { shortHelp_ = help; }
 
   /*! \brief Retrieve the short help string */
-
   inline std::string shortHelp() const { return (shortHelp_); }
 
   /*! \brief Add a long help message to a parameter
@@ -269,7 +399,6 @@ public:
   inline void setLongHelp(const std::string help) { longHelp_ = help; }
 
   /*! \brief Retrieve the long help message */
-
   inline std::string longHelp() const { return (longHelp_); }
 
   /*! \brief  Print long help
@@ -280,7 +409,7 @@ public:
     message will be observed. The short help string will be used if
     long help is not available.
   */
-  void printLongHelp() const;
+  std::string printLongHelp() const;
 
   //@}
 
@@ -288,19 +417,15 @@ public:
   //@{
 
   /*! \brief Return the type of the parameter */
-
   inline CoinParamType type() const { return (type_); }
 
   /*! \brief Set the type of the parameter */
-
   inline void setType(CoinParamType type) { type_ = type; }
 
   /*! \brief Return the parameter keyword (name) string */
-
   inline std::string name() const { return (name_); }
 
   /*! \brief Set the parameter keyword (name) string */
-
   inline void setName(std::string name)
   {
     name_ = name;
@@ -324,38 +449,38 @@ public:
   */
   std::string matchName() const;
 
+  /*! \brief Return the length of the formatted paramter name for printing. */
+  int lengthMatchName() const;
+
   /*! \brief Set visibility of parameter
 
     Intended to control whether the parameter is shown when a list of
     parameters is processed. Used by CoinParamUtils::printHelp when printing
     help messages for a list of parameters.
   */
-  inline void setDisplay(bool display) { display_ = display; }
+  inline void setDisplayPriority(CoinDisplayPriority display) {
+     display_ = display;
+  }
 
   /*! \brief Get visibility of parameter */
-
-  inline bool display() const { return (display_); }
+  inline CoinDisplayPriority getDisplayPriority() const { return (display_); }
 
   /*! \brief Get push function */
-
   inline CoinParamFunc pushFunc() { return (pushFunc_); }
 
   /*! \brief Set push function */
-
   inline void setPushFunc(CoinParamFunc func) { pushFunc_ = func; }
 
   /*! \brief Get pull function */
-
   inline CoinParamFunc pullFunc() { return (pullFunc_); }
 
   /*! \brief Set pull function */
-
   inline void setPullFunc(CoinParamFunc func) { pullFunc_ = func; }
 
   //@}
 
-private:
-  /*! \name Private methods */
+protected:
+  /*! \name Protected methods */
   //@{
 
   /*! Process a name for efficient matching */
@@ -363,7 +488,7 @@ private:
 
   //@}
 
-  /*! \name Private parameter data */
+  /*! \name Protected parameter data */
   //@{
   /// Parameter type (see #CoinParamType)
   CoinParamType type_;
@@ -388,6 +513,9 @@ private:
   /// Double parameter - current value
   double dblValue_;
 
+  /// Double parameter - current value
+  double dblDefaultValue_;
+
   /// Lower bound on value for an integer parameter
   int lowerIntValue_;
 
@@ -397,15 +525,34 @@ private:
   /// Integer parameter - current value
   int intValue_;
 
+  /// Integer parameter - default value
+  int intDefaultValue_;
+
   /// String parameter - current value
   std::string strValue_;
 
-  /// Set of valid value-keywords for a keyword parameter
-  std::vector< std::string > definedKwds_;
+  /// String parameter - default value
+  std::string strDefaultValue_;
 
-  /*! \brief Current value for a keyword parameter (index into #definedKwds_)
+  /** Set of valid value-keywords for a keyword parameter
+      (can also be used for keyword/bit for integer values */
+  std::map< std::string, int > definedKwds_;
+
+  /*! \brief Current string value for a keyword parameter 
   */
-  int currentKwd_;
+  std::string currentKwd_;
+
+  /*! \brief Default string value for a keyword parameter 
+  */
+  std::string defaultKwd_;
+
+  /*! \brief Current integer value (mode) for a keyword parameter 
+  */
+  int currentMode_;
+
+  /*! \brief Default integer value (mode) for a keyword parameter 
+  */
+  int defaultMode_;
 
   /// Push function
   CoinParamFunc pushFunc_;
@@ -420,7 +567,7 @@ private:
   std::string longHelp_;
 
   /// Display when processing lists of parameters?
-  bool display_;
+  CoinDisplayPriority display_;
   //@}
 };
 
@@ -447,55 +594,6 @@ std::ostream &operator<<(std::ostream &s, const CoinParam &param);
   documentation.
 */
 namespace CoinParamUtils {
-/*! \relatesalso CoinParam
-      \brief Take command input from the file specified by src.
-
-      Use stdin for \p src to specify interactive prompting for commands.
-  */
-COINUTILSLIB_EXPORT
-void setInputSrc(FILE *src);
-
-/*! \relatesalso CoinParam
-      \brief Returns true if command line parameters are being processed.
-  */
-COINUTILSLIB_EXPORT
-bool isCommandLine();
-
-/*! \relatesalso CoinParam
-      \brief Returns true if parameters are being obtained from stdin.
-  */
-COINUTILSLIB_EXPORT
-bool isInteractive();
-
-/*! \relatesalso CoinParam
-      \brief Attempt to read a string from the input.
-      
-      \p argc and \p argv are used only if isCommandLine() would return true.
-      If \p valid is supplied, it will be set to 0 if a string is parsed
-      without error, 2 if no field is present.
-  */
-COINUTILSLIB_EXPORT
-std::string getStringField(int argc, const char *argv[], int *valid);
-
-/*! \relatesalso CoinParam
-      \brief Attempt to read an integer from the input.
-      
-      \p argc and \p argv are used only if isCommandLine() would return true.
-      If \p valid is supplied, it will be set to 0 if an integer is parsed
-      without error, 1 if there's a parse error, and 2 if no field is present.
-  */
-COINUTILSLIB_EXPORT
-int getIntField(int argc, const char *argv[], int *valid);
-
-/*! \relatesalso CoinParam
-      \brief Attempt to read a real (double) from the input.
-      
-      \p argc and \p argv are used only if isCommandLine() would return true.
-      If \p valid is supplied, it will be set to 0 if a real number is parsed
-      without error, 1 if there's a parse error, and 2 if no field is present.
-  */
-COINUTILSLIB_EXPORT
-double getDoubleField(int argc, const char *argv[], int *valid);
 
 /*! \relatesalso CoinParam
       \brief Scan a parameter vector for parameters whose keyword (name) string
@@ -511,41 +609,7 @@ double getDoubleField(int argc, const char *argv[], int *valid);
   */
 COINUTILSLIB_EXPORT
 int matchParam(const CoinParamVec &paramVec, std::string name,
-  int &matchNdx, int &shortCnt);
-
-/*! \relatesalso CoinParam
-      \brief Get the next command keyword (name)
-
-    To be precise, return the next field from the current command input
-    source, after a bit of processing. In command line mode (isCommandLine()
-    returns true) the next field will normally be of the form `-keyword' or
-    `--keyword' (\e i.e., a parameter keyword), and the string returned would
-    be `keyword'. In interactive mode (isInteractive() returns true), the
-    user will be prompted if necessary.  It is assumed that the user knows
-    not to use the `-' or `--' prefixes unless specifying parameters on the
-    command line.
-
-    There are a number of special cases if we're in command line mode. The
-    order of processing of the raw string goes like this:
-    <ul>
-      <li> A stand-alone `-' is forced to `stdin'.
-      <li> A stand-alone '--' is returned as a word; interpretation is up to
-	   the client.
-      <li> A prefix of '-' or '--' is stripped from the string.
-    </ul>
-    If the result is the string `stdin', command processing shifts to
-    interactive mode and the user is immediately prompted for a new command.
-
-    Whatever results from the above sequence is returned to the user as the
-    return value of the function. An empty string indicates end of input.
-
-    \p prompt will be used only if it's necessary to prompt the user in
-    interactive mode.
-  */
-
-COINUTILSLIB_EXPORT
-std::string getCommand(int argc, const char *argv[],
-  const std::string prompt, std::string *pfx = 0);
+               int &matchNdx, int &shortCnt);
 
 /*! \relatesalso CoinParam
       \brief Look up the command keyword (name) in the parameter vector.
@@ -586,7 +650,7 @@ std::string getCommand(int argc, const char *argv[],
   */
 COINUTILSLIB_EXPORT
 int lookupParam(std::string name, CoinParamVec &paramVec,
-  int *matchCnt = 0, int *shortCnt = 0, int *queryCnt = 0);
+                int *matchCnt = 0, int *shortCnt = 0, int *queryCnt = 0);
 
 /*! \relatesalso CoinParam
       \brief Utility to print a long message as filled lines of text
@@ -626,8 +690,7 @@ void shortOrHelpOne(CoinParamVec &paramVec, int matchNdx, std::string name, int 
       short help is printed for each matching name.
   */
 COINUTILSLIB_EXPORT
-void shortOrHelpMany(CoinParamVec &paramVec,
-  std::string name, int numQuery);
+void shortOrHelpMany(CoinParamVec &paramVec, std::string name, int numQuery);
 
 /*! \relatesalso CoinParam
       \brief Print a generic `how to use the command interface' help message.
@@ -651,10 +714,37 @@ void printGenericHelp();
   */
 COINUTILSLIB_EXPORT
 void printHelp(CoinParamVec &paramVec, int firstParam, int lastParam,
-  std::string prefix,
-  bool shortHelp, bool longHelp, bool hidden);
-}
+               std::string prefix,
+               bool shortHelp, bool longHelp, bool hidden);
 
+COINUTILSLIB_EXPORT
+std::string printString(const std::string &input, int maxWidth = 65);
+
+COINUTILSLIB_EXPORT
+std::string printString(const char *input, int maxWidth = 65);
+
+COINUTILSLIB_EXPORT
+void readFromStream(std::deque<std::string> &inputQueue,
+                    std::istream &inputStream);
+
+COINUTILSLIB_EXPORT
+void readInteractiveInput(std::deque<std::string> &inputQueue,
+                          const std::string &prompt);
+
+COINUTILSLIB_EXPORT
+std::string getNextField(std::deque<std::string> &inputQueue,
+                         bool interactiveMode = false,
+                         std::string prompt="");
+
+COINUTILSLIB_EXPORT
+void processFile(std::string &fileName, std::string dirName,
+                 bool *fileExists = NULL);
+
+COINUTILSLIB_EXPORT
+void formInputQueue(std::deque<std::string> &inputQueue,
+                    std::string commandName,
+                    int argc, char **argv);
+}
 #endif /* CoinParam_H */
 
 /* vi: softtabstop=2 shiftwidth=2 expandtab tabstop=2
