@@ -1046,7 +1046,9 @@ const CoinPresolveAction
 
     rlo[tgtrow] = 0.0;
     rup[tgtrow] = 0.0;
-    prob->setRowStatus(tgtrow,CoinPrePostsolveMatrix::atLowerBound);
+    if (rowstat) {
+      prob->setRowStatus(tgtrow,CoinPrePostsolveMatrix::atLowerBound);
+    }
 
     zeros[nzeros++] = tgtcolx;
 
