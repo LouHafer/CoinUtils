@@ -411,7 +411,7 @@ const CoinPresolveAction
 	  double value = rowels[iCheap];
 	  iCheap = hcol[iCheap]; 
 	  double diff2 = dlo/value;
-	  double diff = CoinMin(cup[iCheap]-clo[iCheap],diff2);
+	  double diff = std::min(cup[iCheap]-clo[iCheap],diff2);
 	  // fix
 	  prob->clo_[iCheap] += diff;
 	  prob->cup_[iCheap] = prob->clo_[iCheap];
@@ -917,11 +917,11 @@ const CoinPresolveAction
                   if (value_k * value_j > 0.0) {
                     // k needs to increase
                     double distance_k = cup[k] - csol[k];
-                    movement = CoinMin((distance_j * value_j) / value_k, distance_k);
+                    movement = std::min((distance_j * value_j) / value_k, distance_k);
                   } else {
                     // k needs to decrease
                     double distance_k = clo[k] - csol[k];
-                    movement = CoinMax((distance_j * value_j) / value_k, distance_k);
+                    movement = std::max((distance_j * value_j) / value_k, distance_k);
                   }
                   if (relEq(movement, 0))
                     continue;
@@ -991,11 +991,11 @@ const CoinPresolveAction
 		  if (value_k*value_j<0.0) {
 		    // k needs to increase
 		    double distance_k = cup[k]-csol[k] ;
-		    movement = CoinMin((distance_j*value_j)/value_k,distance_k) ;
+		    movement = std::min((distance_j*value_j)/value_k,distance_k) ;
 		  } else {
 		    // k needs to decrease
 		    double distance_k = clo[k]-csol[k] ;
-		    movement = CoinMax((distance_j*value_j)/value_k,distance_k) ;
+		    movement = std::max((distance_j*value_j)/value_k,distance_k) ;
 		  }
 		  if (relEq(movement,0)) continue ;
 
@@ -1374,8 +1374,8 @@ const CoinPresolveAction
               ++iflagu;
           }
         }
-        iflagl = CoinMin(iflagl, 2);
-        iflagu = CoinMin(iflagu, 2);
+        iflagl = std::min(iflagl, 2);
+        iflagu = std::min(iflagu, 2);
         infCount[i] = iflagl | (iflagu << 16);
         ymax[i] = dmaxup;
         ymin[i] = dmaxdown;
@@ -1631,6 +1631,8 @@ const CoinPresolveAction
 	int nOther = 0;
 	int nSameCoeff = 0;
 	int nSingletons = 0;
+	// Singletons - all continuous 1 - all binary 2 - other (general or mixed) 3
+	int nMixed = 0;
 	double rhs = canFix[i] == 1 ? rup[i] : rlo[i];
 	double firstCoeff = 0.0;
 	int j = -1;
@@ -1645,8 +1647,9 @@ const CoinPresolveAction
 #endif
 	for (CoinBigIndex k = krs; k < kre; k++) {
 	  j = hcol[k];
-	  if (hincol[j]==1)
+	  if (hincol[j]==1) {
 	    nSingletons++;
+	  }
 	  double coeff = fabs(rowels[k]);
 	  if (cup[j] > clo[j]) {
 	    if (!firstCoeff) {
@@ -1661,11 +1664,24 @@ const CoinPresolveAction
 	    if (prob->colProhibited2(j)) {
 	      nInteger = 1;
 	      nOther = 1;
+	      nMixed = 3;
 	      break;
 	    } else if (integerType[j]) {
 	      nInteger++;
+	      if (clo[j]==0.0&&cup[j]==1.0) {
+		if (!nMixed)
+		  nMixed = 2;
+		else if (nMixed!=2)
+		  nMixed = 3; // be on safe side
+	      } else {
+		nMixed = 3;
+	      }
 	    } else {
 	      nOther++;
+	      if (!nMixed)
+		nMixed = 1;
+	      else if (nMixed!=1)
+		nMixed = 3; // be on safe side
 	    }
 	  } else {
 	    rhs -= coeff * clo[j];
@@ -1673,7 +1689,8 @@ const CoinPresolveAction
 	}
 	if (nSingletons>1) {
 	  //printf("%d singletons nOther %d\n",nSingletons,nOther);
-	  nOther=0;
+	  if (nMixed<3)
+	    nOther=0;
 	}
 	if (!nOther) {
 	  if (nSameCoeff == nInteger) {

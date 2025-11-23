@@ -118,8 +118,6 @@ int CoinFactorization::updateColumn(CoinIndexedVector *regionSparse,
         regionIndex[j] = iRow;
       }
     } else {
-#else
-  assert(!regionSparse2->packedMode());
 #endif
       for (int j = 0; j < numberNonZero; j++) {
         int iRow = index[j];
@@ -244,7 +242,7 @@ void CoinFactorization::updateColumnL(CoinIndexedVector *regionSparse,
     // Guess at number at end
     if (sparseThreshold_ > 0) {
       if (ftranAverageAfterL_) {
-        int newNumber = static_cast< int >(number * ftranAverageAfterL_);
+        double newNumber = number * ftranAverageAfterL_;
         if (newNumber < sparseThreshold_ && (numberL_ << 2) > newNumber)
           goSparse = 2;
         else if (newNumber < sparseThreshold2_ && (numberL_ << 1) > newNumber)
@@ -346,7 +344,7 @@ void CoinFactorization::updateColumnLDensish(CoinIndexedVector *regionSparse,
   for (int k = 0; k < number; k++) {
     int iPivot = regionIndex[k];
     if (iPivot >= baseL_)
-      smallestIndex = CoinMin(iPivot, smallestIndex);
+      smallestIndex = std::min(iPivot, smallestIndex);
     else
       regionIndex[numberNonZero++] = iPivot;
   }
@@ -417,7 +415,7 @@ void CoinFactorization::updateColumnLSparsish(CoinIndexedVector *regionSparse,
     if (iPivot < baseL_) {
       regionIndex[numberNonZero++] = iPivot;
     } else {
-      smallestIndex = CoinMin(iPivot, smallestIndex);
+      smallestIndex = std::min(iPivot, smallestIndex);
       int iWord = iPivot >> CHECK_SHIFT;
       int iBit = iPivot - (iWord << CHECK_SHIFT);
       if (mark[iWord]) {
@@ -430,7 +428,7 @@ void CoinFactorization::updateColumnLSparsish(CoinIndexedVector *regionSparse,
   // now others
   // First do up to convenient power of 2
   int jLast = (smallestIndex + BITS_PER_CHECK - 1) >> CHECK_SHIFT;
-  jLast = CoinMin((jLast << CHECK_SHIFT), last);
+  jLast = std::min((jLast << CHECK_SHIFT), last);
   int i;
   for (i = smallestIndex; i < jLast; i++) {
     CoinFactorizationDouble pivotValue = region[i];
@@ -742,7 +740,7 @@ int goSparse = 0;
 if (sparseThreshold_ > 0) {
   int numberNonZero = (regionUpdate->getNumElements() + regionFT->getNumElements()) >> 1;
   if (ftranAverageAfterR_) {
-    int newNumber = static_cast< int >(numberNonZero * ftranAverageAfterU_);
+    double newNumber = numberNonZero * ftranAverageAfterU_;
     if (newNumber < sparseThreshold_)
       goSparse = 2;
     else if (newNumber < sparseThreshold2_)
@@ -1027,7 +1025,7 @@ void CoinFactorization::updateColumnU(CoinIndexedVector *regionSparse,
   // Guess at number at end
   if (sparseThreshold_ > 0) {
     if (ftranAverageAfterR_) {
-      int newNumber = static_cast< int >(numberNonZero * ftranAverageAfterU_);
+      double newNumber = numberNonZero * ftranAverageAfterU_;
       if (newNumber < sparseThreshold_)
         goSparse = 2;
       else if (newNumber < sparseThreshold2_)
@@ -1448,7 +1446,7 @@ void CoinFactorization::updateColumnUSparsish(CoinIndexedVector *regionSparse,
   numberNonZero = 0;
   // First do down to convenient power of 2
   int jLast = (numberU_ - 1) >> CHECK_SHIFT;
-  jLast = CoinMax((jLast << CHECK_SHIFT), static_cast< int >(numberSlacks_));
+  jLast = std::max((jLast << CHECK_SHIFT), static_cast< int >(numberSlacks_));
   int i;
   for (i = numberU_ - 1; i >= jLast; i--) {
     CoinFactorizationDouble pivotValue = region[i];
