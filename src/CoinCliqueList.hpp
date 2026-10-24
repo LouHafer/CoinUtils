@@ -8,7 +8,7 @@
  * @file CoinCliqueList.hpp
  * @brief List of cliques
  * @author Samuel Souza Brito and Haroldo Gambini Santos
- * Contact: samuelbrito@ufop.edu.br and haroldo@ufop.edu.br
+ * Contact: samuelbrito@ufop.edu.br and haroldo.santos@gmail.com
  * @date 03/27/2020
  *
  * \copyright{Copyright 2020 Brito, S.S. and Santos, H.G.}
@@ -67,10 +67,15 @@ public:
 
   /**
    * Return the elements of a clique.
-   * 
+   *
    * @param idxClq index of a clique.
    **/
   const size_t *cliqueElements( size_t idxClq ) const;
+
+  /**
+   * Move the contents of a clique out (transfers ownership, leaves it empty).
+   **/
+  std::vector<size_t> moveClique(size_t idxClq) { return std::move(clqEls_[idxClq]); }
 
   /**
    * Return the total number of elements

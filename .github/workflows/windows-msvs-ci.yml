@@ -1,13 +1,22 @@
 ---
 name: Windows MSVS build and test
 on:
+  workflow_dispatch:
   push:
     branches:
       - 'master'
       - 'stable/*'
+    paths-ignore:
+      - 'README.md'
+      - '.coin-or/generate_readme'
+      - '.github/workflows/readme.yml'
   pull_request:
     branches:
       - '**'
+    paths-ignore:
+      - 'README.md'
+      - '.coin-or/generate_readme'
+      - '.github/workflows/readme.yml'
   release:
     types:
       - created
@@ -40,16 +49,16 @@ jobs:
           echo Package suffix - '${{ env.package_suffix }}'
           if "${{ env.output_dir }}"=="" echo ERROR - No output_dir set, possibly unsupported platform '${{ matrix.platform }}'. Expecting x64 or x86. && exit 1
       - name: Checkout source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: ${{ github.event.repository.name }}
       - name: Checkout coinbrew
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           repository: coin-or/coinbrew
           path: coinbrew
       - name: Set up msbuild
-        uses: microsoft/setup-msbuild@v2
+        uses: microsoft/setup-msbuild@v3
       - name: Set up msys for coinbrew
         uses: msys2/setup-msys2@v2
         with:
@@ -93,7 +102,7 @@ jobs:
           if exist .\Data\Netlib xcopy .\Data\Netlib dist\share\coin-or-netlib /i
           if exist .\Data\Miplib3 xcopy .\Data\Miplib3 dist\share\coin-or-miplib3 /i
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ github.event.repository.name }}-${{ env.package_suffix }}
           path: dist

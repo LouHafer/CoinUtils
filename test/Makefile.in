@@ -119,12 +119,14 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES = plan.mod
 PROGRAMS = $(noinst_PROGRAMS)
 am_unitTest_OBJECTS = CoinLpIOTest.$(OBJEXT) \
+	CoinStaticConflictGraphTest.$(OBJEXT) \
 	CoinDenseVectorTest.$(OBJEXT) CoinErrorTest.$(OBJEXT) \
 	CoinIndexedVectorTest.$(OBJEXT) \
 	CoinMessageHandlerTest.$(OBJEXT) CoinModelTest.$(OBJEXT) \
 	CoinMpsIOTest.$(OBJEXT) CoinPackedMatrixTest.$(OBJEXT) \
 	CoinPackedVectorTest.$(OBJEXT) CoinRationalTest.$(OBJEXT) \
-	CoinShallowPackedVectorTest.$(OBJEXT) unitTest.$(OBJEXT)
+	CoinShallowPackedVectorTest.$(OBJEXT) \
+	CoinKnapsackRowTest.$(OBJEXT) unitTest.$(OBJEXT)
 unitTest_OBJECTS = $(am_unitTest_OBJECTS)
 am__DEPENDENCIES_1 =
 unitTest_DEPENDENCIES = ../src/libCoinUtils.la $(am__DEPENDENCIES_1)
@@ -150,13 +152,14 @@ am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/CoinDenseVectorTest.Po \
 	./$(DEPDIR)/CoinErrorTest.Po \
 	./$(DEPDIR)/CoinIndexedVectorTest.Po \
-	./$(DEPDIR)/CoinLpIOTest.Po \
+	./$(DEPDIR)/CoinKnapsackRowTest.Po ./$(DEPDIR)/CoinLpIOTest.Po \
 	./$(DEPDIR)/CoinMessageHandlerTest.Po \
 	./$(DEPDIR)/CoinModelTest.Po ./$(DEPDIR)/CoinMpsIOTest.Po \
 	./$(DEPDIR)/CoinPackedMatrixTest.Po \
 	./$(DEPDIR)/CoinPackedVectorTest.Po \
 	./$(DEPDIR)/CoinRationalTest.Po \
 	./$(DEPDIR)/CoinShallowPackedVectorTest.Po \
+	./$(DEPDIR)/CoinStaticConflictGraphTest.Po \
 	./$(DEPDIR)/unitTest.Po
 am__mv = mv -f
 CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
@@ -354,6 +357,7 @@ top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 unitTest_SOURCES = \
 	CoinLpIOTest.cpp \
+	CoinStaticConflictGraphTest.cpp \
 	CoinDenseVectorTest.cpp \
 	CoinErrorTest.cpp \
 	CoinIndexedVectorTest.cpp \
@@ -364,6 +368,7 @@ unitTest_SOURCES = \
 	CoinPackedVectorTest.cpp \
 	CoinRationalTest.cpp \
 	CoinShallowPackedVectorTest.cpp \
+	CoinKnapsackRowTest.cpp \
 	unitTest.cpp
 
 
@@ -435,6 +440,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinDenseVectorTest.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinErrorTest.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinIndexedVectorTest.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinKnapsackRowTest.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinLpIOTest.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinMessageHandlerTest.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinModelTest.Po@am__quote@ # am--include-marker
@@ -443,6 +449,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinPackedVectorTest.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinRationalTest.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinShallowPackedVectorTest.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/CoinStaticConflictGraphTest.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/unitTest.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
@@ -576,6 +583,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/CoinDenseVectorTest.Po
 	-rm -f ./$(DEPDIR)/CoinErrorTest.Po
 	-rm -f ./$(DEPDIR)/CoinIndexedVectorTest.Po
+	-rm -f ./$(DEPDIR)/CoinKnapsackRowTest.Po
 	-rm -f ./$(DEPDIR)/CoinLpIOTest.Po
 	-rm -f ./$(DEPDIR)/CoinMessageHandlerTest.Po
 	-rm -f ./$(DEPDIR)/CoinModelTest.Po
@@ -584,6 +592,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/CoinPackedVectorTest.Po
 	-rm -f ./$(DEPDIR)/CoinRationalTest.Po
 	-rm -f ./$(DEPDIR)/CoinShallowPackedVectorTest.Po
+	-rm -f ./$(DEPDIR)/CoinStaticConflictGraphTest.Po
 	-rm -f ./$(DEPDIR)/unitTest.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
@@ -633,6 +642,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/CoinDenseVectorTest.Po
 	-rm -f ./$(DEPDIR)/CoinErrorTest.Po
 	-rm -f ./$(DEPDIR)/CoinIndexedVectorTest.Po
+	-rm -f ./$(DEPDIR)/CoinKnapsackRowTest.Po
 	-rm -f ./$(DEPDIR)/CoinLpIOTest.Po
 	-rm -f ./$(DEPDIR)/CoinMessageHandlerTest.Po
 	-rm -f ./$(DEPDIR)/CoinModelTest.Po
@@ -641,6 +651,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/CoinPackedVectorTest.Po
 	-rm -f ./$(DEPDIR)/CoinRationalTest.Po
 	-rm -f ./$(DEPDIR)/CoinShallowPackedVectorTest.Po
+	-rm -f ./$(DEPDIR)/CoinStaticConflictGraphTest.Po
 	-rm -f ./$(DEPDIR)/unitTest.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic

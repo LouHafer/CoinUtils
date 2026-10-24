@@ -18,6 +18,7 @@ lib_LTLIBRARIES = libCoinUtils.la
 libCoinUtils_la_SOURCES = \
 	CoinAlloc.cpp \
 	CoinBuild.cpp \
+	CoinBuildInfo.cpp \
 	CoinDenseVector.cpp \
 	CoinError.cpp \
 	CoinFactorization1.cpp \
@@ -76,10 +77,14 @@ libCoinUtils_la_SOURCES = \
 	CoinConflictGraph.cpp \
 	CoinCutPool.cpp \
 	CoinDynamicConflictGraph.cpp \
+	CoinKnapsackRow.cpp \
+	CoinBoundPropagation.cpp \
+	CoinTerm.cpp \
 	CoinNodeHeap.cpp \
 	CoinOddWheelSeparator.cpp \
 	CoinShortestPath.cpp \
-	CoinStaticConflictGraph.cpp
+	CoinStaticConflictGraph.cpp \
+	CoinTable.cpp
 
 if BUILD_OSLFACTORIZATION
   libCoinUtils_la_SOURCES += CoinOslFactorization.cpp CoinOslFactorization2.cpp CoinOslFactorization3.cpp CoinSimpFactorization.cpp
@@ -104,6 +109,7 @@ includecoindir = $(pkgincludedir)
 includecoin_HEADERS = \
 	CoinAlloc.hpp \
 	CoinBuild.hpp \
+	CoinBuildInfo.hpp \
 	CoinDenseVector.hpp \
 	CoinDistance.hpp \
 	CoinError.hpp \
@@ -115,6 +121,7 @@ includecoin_HEADERS = \
 	CoinHelperFunctions.hpp \
 	CoinIndexedVector.hpp \
 	CoinLpIO.hpp \
+	CoinMemUsage.hpp \
 	CoinMessage.hpp \
 	CoinMessageHandler.hpp \
 	CoinModel.hpp \
@@ -166,10 +173,15 @@ includecoin_HEADERS = \
 	CoinConflictGraph.hpp \
 	CoinCutPool.hpp \
 	CoinDynamicConflictGraph.hpp \
+	CoinKnapsackRow.hpp \
+	CoinBoundPropagation.hpp \
+	CoinTerm.hpp \
 	CoinNodeHeap.hpp \
 	CoinOddWheelSeparator.hpp \
 	CoinShortestPath.hpp \
-	CoinStaticConflictGraph.hpp
+	CoinStaticConflictGraph.hpp \
+	CoinColumnType.hpp \
+	CoinTable.hpp
 
 if BUILD_OSLFACTORIZATION
   includecoin_HEADERS += CoinOslFactorization.hpp CoinSimpFactorization.hpp

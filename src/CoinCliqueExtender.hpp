@@ -7,7 +7,7 @@
  * @file CoinCliqueExtender.hpp
  * @brief Clique extender
  * @author Samuel Souza Brito and Haroldo Gambini Santos
- * Contact: samuelbrito@ufop.edu.br and haroldo@ufop.edu.br
+ * Contact: samuelbrito@ufop.edu.br and haroldo.santos@gmail.com
  * @date 03/27/2020
  *
  * \copyright{Copyright 2020 Brito, S.S. and Santos, H.G.}
@@ -43,7 +43,7 @@ public:
    **/
   explicit CoinCliqueExtender(const CoinConflictGraph *cgraph, size_t extMethod = 4, const double *rc = NULL,
           const double maxRC = 100.0);
-  
+
   /**
    * Destructor
    **/
@@ -85,24 +85,30 @@ private:
   /**
    * Construct a list of candidates to enter the clique.
    *
+   * Candidates are verified in @p costs order and verification stops once
+   * maxCandidates_ of them have been accepted, since the caller keeps only that
+   * many. Sets candidatesRanked_ to say whether that happened.
+   *
    * @param clqIdxs indexes of the clique to be extended
    * @param clqSize size of the clique to be extended
+   * @param costs ranking used by the caller, or NULL for an unranked (random)
+   *        selection, in which case every survivor is verified
    **/
-  void fillCandidates(const size_t *clqIdxs, const size_t clqSize);
-  
+  void fillCandidates(const size_t *clqIdxs, const size_t clqSize, const double *costs);
+
   /**
    * Randomly select the vertices to be inserted in the clique.
-   * 
+   *
    * @param clqIdxs indexes of the clique to be extended
    * @param clqIdxs size of the clique to be extended
    **/
   bool randomExtension(const size_t *clqIdxs, const size_t clqSize);
-  
+
   /**
    * Select the vertices to be inserted in the clique using a greedy
    * strategy. Consider the method to extend cliques passed in
    * the constructor.
-   * 
+   *
    * @param clqIdxs indexes of the clique to be extended
    * @param clqIdxs size of the clique to be extended
    **/
@@ -135,7 +141,7 @@ private:
    **/
   std::vector<size_t> candidates_;
   size_t nCandidates_;
-  
+
   /**
    * Auxiliary array used to temporarily
    * store a new extended clique.
@@ -154,6 +160,18 @@ private:
    * Auxiliary incidence vectors
    **/
   std::vector<char> iv_, iv2_;
+
+  /**
+   * Nodes surviving the cheap filters in fillCandidates, before the expensive
+   * conflicts-with-every-clique-element verification.
+   **/
+  std::vector<size_t> raw_;
+
+  /**
+   * True when fillCandidates returned the candidates already in cost order and
+   * truncated to maxCandidates_, so the caller must not rank them again.
+   **/
+  bool candidatesRanked_;
 
   /**
    * Array containing the reduced cost associated
